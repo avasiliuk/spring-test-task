@@ -1,0 +1,100 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath "org.jooq:jooq-codegen:3.11.7"
+        classpath 'com.h2database:h2:1.4.197'
+    }
+}
+
+plugins {
+    id 'org.springframework.boot' version '2.1.1.RELEASE'
+    id "org.flywaydb.flyway" version "5.2.4"
+    id 'com.github.ben-manes.versions' version '0.20.0'
+}
+
+apply plugin: 'java'
+apply plugin: 'io.spring.dependency-management'
+
+group 'avasiliuk'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    mapstructVersion = '1.2.0.Final'
+    swaggerVersion = '2.9.2'
+    lombokVersion = '1.18.4'
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'com.h2database:h2:1.4.197'
+    implementation 'org.flywaydb:flyway-core:5.2.4'
+    implementation 'org.jooq:jooq:3.11.7'
+    implementation "org.mapstruct:mapstruct-jdk8:${mapstructVersion}"
+    implementation "io.springfox:springfox-swagger2:${swaggerVersion}"
+    implementation "io.springfox:springfox-swagger-ui:${swaggerVersion}"
+    implementation 'org.apache.commons:commons-lang3:3.8.1'
+    implementation "org.projectlombok:lombok:${lombokVersion}"
+
+    annotationProcessor "org.mapstruct:mapstruct-processor:${mapstructVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+}
+
+flyway {
+    url = 'jdbc:h2:file:./tmp-db;'
+    user = 'tmp_db_user'
+    password = 'tmp_db_password'
+}
+
+def writer = new StringWriter()
+new groovy.xml.MarkupBuilder(writer).configuration('xmlns': 'http://www.jooq.org/xsd/jooq-codegen-3.11.0.xsd') {
+    jdbc() {
+        driver('org.h2.Driver')
+        url('jdbc:h2:file:./tmp-db;')
+        user('tmp_db_user')
+        password('tmp_db_password')
+    }
+    generator() {
+        database() {
+            excludes("PUBLIC.flyway_schema_history")
+            inputSchema("PUBLIC")
+        }
+        generate([:]) {
+            pojos false
+            daos false
+        }
+        target() {
+            packageName('com.avasiliuk.testtask.model.jooq')
+            directory('src/main/java')
+        }
+    }
+}
+
+task jooqGenerate {
+    doLast {
+        def xmlString = writer.toString()
+        org.jooq.codegen.GenerationTool.generate(
+                javax.xml.bind.JAXB.unmarshal(new StringReader(xmlString), org.jooq.meta.jaxb.Configuration.class)
+        )
+        new File('./tmp-db.trace.db').delete()
+        new File('./tmp-db.mv.db').delete()
+    }
+}
+jooqGenerate.dependsOn flywayMigrate
+//processResources.dependsOn jooqGenerate
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs = [
+            '-Amapstruct.unmappedTargetPolicy=ERROR'
+    ]
+}
